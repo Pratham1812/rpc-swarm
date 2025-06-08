@@ -1,8 +1,8 @@
-use log::{info, debug, error, warn};
-use rpc_swarm::error::Result;
+use crate::error::Result;
+use log::{debug, error, info, warn};
 
 #[tokio::main]
-async fn main() -> Result<()>{
+async fn main() -> Result<()> {
     env_logger::init();
     info!("Swarm is starting...");
     // Your application logic goes here
