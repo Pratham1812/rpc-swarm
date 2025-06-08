@@ -1,0 +1,8 @@
+# RPC Swarm Configuration
+endpoints = [
+    "http://rpc1.example.com:8545",
+    "http://rpc2.example.com:8545",
+    "ws://rpc3.example.com:8546",
+]
+health_check_interval_secs = 10
+health_check_timeout_secs = 2
