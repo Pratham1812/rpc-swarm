@@ -15,7 +15,18 @@ impl Settings {
         let config_path = "config/default.toml";
         let config_str = fs::read_to_string(config_path)
             .map_err(|e| Error::Config(format!("Failed to read config file: {}", e)));
-        toml::from_str(&config_str?)
-            .map_err(|e| Error::Config(format!("Failed to parse config file: {}", e)))
+        let settings:Settings =toml::from_str(&config_str?)
+            .map_err(|e| Error::Config(format!("Failed to parse config file: {}", e)));
+
+        for endpoint in &settings.endpoints {
+            if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") && !endpoint.starts_with("ws://") && !endpoint.starts_with("wss://") {
+                return Err(Error::Config(format!(
+                    "Invalid endpoint URL: {}. Must start with http:// or https://",
+                    endpoint
+                )));
+            }
+        }
+
+        
     }
 }
