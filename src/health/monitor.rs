@@ -1,28 +1,39 @@
-use crate::load_balancer::endpoint::Endpoint;
+use tokio::time::{interval, Duration};
+use log::{info, error};
+
 use crate::health::checker::HealthChecker;
+use crate::load_balancer::endpoint::Endpoint;
 use crate::error::Result;
 
 pub struct HealthMonitor {
-    health_checker: HealthChecker,
+    checker: HealthChecker,
+    interval: Duration,
 }
 
-impl HealthMonitor{
-    pub fn new(health_cheker:HealthChecker) -> Result<Self> {
-        Ok(HealthMonitor {
-            health_checker:HealthChecker
-        })
+impl HealthMonitor {
+    pub fn new(interval_secs: u64, timeout_secs: u64) -> Self {
+        HealthMonitor {
+            checker: HealthChecker::new(timeout_secs),
+            interval: Duration::from_secs(interval_secs),
+        }
     }
 
-    pub async fn monitor_health(&self,endpoints: &mut [Endpoint]) -> Result<()>{
-        for endpoint in endpoints.iter_mut() {
-            if let Err(e) = self.health_checker.check_health(endpoint).await {
-                endpoint.set_healthy(false);
-                log::error!("Health check failed for endpoint {}: {}", endpoint.url, e);
-            } else {
-                endpoint.set_healthy(true);
-                log::info!("Endpoint {} is healthy", endpoint.url);
+    // Start monitoring endpoints
+    pub async fn monitor(&self, endpoints: &mut [Endpoint]) -> Result<()> {
+        let mut ticker = interval(self.interval);
+        loop {
+            ticker.tick().await;
+            info!("Starting health check cycle for {} endpoints", endpoints.len());
+            for endpoint in endpoints.iter_mut() {
+                match self.checker.check(endpoint).await {    // Create a new health monitor
+
+                    Ok(()) => info!("Endpoint {} is healthy", endpoint.url),
+                    Err(e) => {
+                        error!("Endpoint {} health check failed: {}", endpoint.url, e);
+                        endpoint.set_healthy(false);
+                    }
+                }
             }
         }
-        Ok(())
     }
 }
