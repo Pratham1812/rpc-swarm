@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::load_balancer::{algorithm::LCA, endpoint::Endpoint};
+use crate::load_balancer::{algorithms, endpoint};
 use std::sync::atomic::AtomicUsize;
 
 pub struct Router {

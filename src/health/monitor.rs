@@ -25,7 +25,7 @@ impl HealthMonitor {
             ticker.tick().await;
             info!("Starting health check cycle for {} endpoints", endpoints.len());
             for endpoint in endpoints.iter_mut() {
-                match self.checker.check(endpoint).await {    // Create a new health monitor
+                match self.checker.check_health(endpoint).await {    // Create a new health monitor
 
                     Ok(()) => info!("Endpoint {} is healthy", endpoint.url),
                     Err(e) => {

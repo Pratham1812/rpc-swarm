@@ -1,26 +1,27 @@
-use hyper::{Client, Request, Body};
+use hyper::{client, Request};
+use hyper::body::Body;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use futures_util::{SinkExt, StreamExt}; // Added for split() and next()
 use serde_json::{json, Value};
 use url::Url;
 use std::time::Duration;
 
 use crate::load_balancer::endpoint::Endpoint;
-use  crate::error::{Error, Result};
+use crate::error::{Error, Result};
 
-pub struct HealthChecker{
+pub struct HealthChecker {
     http_client: Client<hyper::client::HttpConnector>,
     timeout: Duration,
 }
 
-impl HealthChecker{
-
+impl HealthChecker {
     pub fn new(timeout_secs: u64) -> Self {
-        let http_client = Client::new();
+        let http_client = client::new();
         let timeout = Duration::from_secs(timeout_secs);
         HealthChecker { http_client, timeout }
     }
 
-    pub async fn check_health(&self, endpoint: &mut Endpoint) -> Result<>{
+    pub async fn check_health(&self, endpoint: &mut Endpoint) -> Result<()> {
         match endpoint.url.scheme() {
             "http" | "https" => self.check_http_health(endpoint).await,
             "ws" | "wss" => self.check_ws_health(endpoint).await,
@@ -29,7 +30,7 @@ impl HealthChecker{
     }
 
     // HTTP health check: Send eth_blockNumber JSON-RPC request
-    async fn check_http(&self, endpoint: &mut Endpoint) -> Result<()> {
+    async fn check_http_health(&self, endpoint: &mut Endpoint) -> Result<()> {
         // Build JSON-RPC request
         let request_body = json!({
             "jsonrpc": "2.0",
@@ -37,6 +38,7 @@ impl HealthChecker{
             "params": [],
             "id": 1
         });
+        
         let req = Request::builder()
             .method("POST")
             .uri(endpoint.url.as_str())
@@ -46,6 +48,7 @@ impl HealthChecker{
         // Send request with timeout
         let response = tokio::time::timeout(self.timeout, self.http_client.request(req)).await??;
         let status = response.status();
+        
         if !status.is_success() {
             endpoint.set_healthy(false);
             return Err(Error::Config(format!("HTTP check failed with status: {}", status)));
@@ -54,6 +57,7 @@ impl HealthChecker{
         // Parse response
         let body_bytes = hyper::body::to_bytes(response.into_body()).await?;
         let json: Value = serde_json::from_slice(&body_bytes)?;
+        
         if json.get("result").is_some() {
             endpoint.set_healthy(true);
             Ok(())
@@ -64,19 +68,24 @@ impl HealthChecker{
     }
 
     // WebSocket health check: Send ping and expect pong
-    async fn check_websocket(&self, endpoint: &mut Endpoint) -> Result<()> {
+    async fn check_ws_health(&self, endpoint: &mut Endpoint) -> Result<()> {
         // Connect to WebSocket
-        let (ws_stream, _) = tokio::time::timeout(self.timeout, connect_async(&endpoint.url)).await??;
+        let (ws_stream, _) = tokio::time::timeout(
+            self.timeout, 
+            connect_async(endpoint.url.as_str())
+        ).await??;
+        
         let (mut write, mut read) = ws_stream.split();
 
         // Send ping
         write.send(Message::Ping(vec![])).await?;
 
-        // Wait for pong
+        // Wait for pong with timeout
         let response = tokio::time::timeout(self.timeout, read.next()).await?;
+        
         match response {
             Some(Ok(Message::Pong(_))) => {
-                endpoint.set_healthy(true); 
+                endpoint.set_healthy(true);
                 Ok(())
             }
             _ => {
@@ -85,5 +94,4 @@ impl HealthChecker{
             }
         }
     }
-
 }

@@ -3,3 +3,4 @@ pub mod health;
 pub mod load_balancer;
 pub mod metrics;
 pub mod protocols;
+pub mod error;

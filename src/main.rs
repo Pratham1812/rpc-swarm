@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crate::config::Settings;
 use crate::error::Result;
 use crate::load_balancer::Router;
+use crate::health::monitor::HealthMonitor;
 use log::{debug, error, info, warn};
 
 // You'll need to import your Router struct
@@ -46,7 +47,14 @@ async fn main() -> Result<()> {
                 router.endpoints.len(),
                 network
             );
-            
+
+            task::spawn(async move {
+                if let Err(e) = monitor.monitor(&mut router.endpoints).await {
+                    error!("Health monitor failed: {}", e);
+                }
+            }); 
+
+            tokio::time::sleep(Duration::from_secs(3600)).await; // Keep running for testing            
             // Store the router
             routers.insert(network.clone(), router);
         } else {
