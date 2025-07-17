@@ -1,22 +1,29 @@
-use hyper::{client, Request};
-use hyper::body::Body;
+// Updated imports for hyper v1.x ecosystem
+use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::HttpConnector;
+use http_body_util::{BodyExt, Full};
+use hyper::body::{Bytes, Body};
+use hyper::Request;
+use hyper_util::rt::TokioExecutor;
+
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use futures_util::{SinkExt, StreamExt}; // Added for split() and next()
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use url::Url;
 use std::time::Duration;
 
 use crate::load_balancer::endpoint::Endpoint;
 use crate::error::{Error, Result};
 
 pub struct HealthChecker {
-    http_client: Client<hyper::client::HttpConnector>,
+    // The client type is now more specific, using components from hyper-util
+    http_client: Client<HttpConnector, Full<Bytes>>,
     timeout: Duration,
 }
 
 impl HealthChecker {
     pub fn new(timeout_secs: u64) -> Self {
-        let http_client = client::new();
+        // The new way to build a basic client
+        let http_client = Client::builder(TokioExecutor::new()).build_http();
         let timeout = Duration::from_secs(timeout_secs);
         HealthChecker { http_client, timeout }
     }
@@ -31,7 +38,6 @@ impl HealthChecker {
 
     // HTTP health check: Send eth_blockNumber JSON-RPC request
     async fn check_http_health(&self, endpoint: &mut Endpoint) -> Result<()> {
-        // Build JSON-RPC request
         let request_body = json!({
             "jsonrpc": "2.0",
             "method": "eth_blockNumber",
@@ -39,59 +45,85 @@ impl HealthChecker {
             "id": 1
         });
         
+        // The body must now be created using a concrete type like `Full` from http-body-util
         let req = Request::builder()
             .method("POST")
             .uri(endpoint.url.as_str())
             .header("Content-Type", "application/json")
-            .body(Body::from(request_body.to_string()))?;
+            .body(Full::new(Bytes::from(request_body.to_string())))
+            .map_err(|e| Error::HealthCheck(format!("Failed to build request: {}", e)))?;
 
-        // Send request with timeout
-        let response = tokio::time::timeout(self.timeout, self.http_client.request(req)).await??;
+        let response_future = self.http_client.request(req);
+        let response = tokio::time::timeout(self.timeout, response_future)
+            .await
+            .map_err(|_| Error::HealthCheck("HTTP request timeout".to_string()))?
+            .map_err(|e| Error::HealthCheck(format!("HTTP request failed: {}", e)))?;
+        
         let status = response.status();
         
         if !status.is_success() {
             endpoint.set_healthy(false);
-            return Err(Error::Config(format!("HTTP check failed with status: {}", status)));
+            return Err(Error::HealthCheck(format!("HTTP check failed with status: {}", status)));
         }
 
-        // Parse response
-        let body_bytes = hyper::body::to_bytes(response.into_body()).await?;
-        let json: Value = serde_json::from_slice(&body_bytes)?;
+        // The new, simpler way to read a response body to bytes
+        let body_bytes = response.into_body().collect().await
+            .map_err(|e| Error::HealthCheck(format!("Failed to read response body: {}", e)))?
+            .to_bytes();
+        
+        let json: Value = serde_json::from_slice(&body_bytes)
+            .map_err(|e| Error::HealthCheck(format!("Failed to parse JSON response: {}", e)))?;
         
         if json.get("result").is_some() {
             endpoint.set_healthy(true);
             Ok(())
         } else {
             endpoint.set_healthy(false);
-            Err(Error::Config("No result in eth_blockNumber response".to_string()))
+            Err(Error::HealthCheck("No result in eth_blockNumber response".to_string()))
         }
     }
 
-    // WebSocket health check: Send ping and expect pong
+    // This function already used modern APIs and did not require changes.
     async fn check_ws_health(&self, endpoint: &mut Endpoint) -> Result<()> {
-        // Connect to WebSocket
         let (ws_stream, _) = tokio::time::timeout(
             self.timeout, 
             connect_async(endpoint.url.as_str())
-        ).await??;
+        )
+        .await
+        .map_err(|_| Error::HealthCheck("WebSocket connection timeout".to_string()))?
+        .map_err(|e| Error::HealthCheck(format!("WebSocket connection failed: {}", e)))?;
         
         let (mut write, mut read) = ws_stream.split();
 
-        // Send ping
-        write.send(Message::Ping(vec![])).await?;
+        if let Err(e) = write.send(Message::Ping(vec![])).await {
+            endpoint.set_healthy(false);
+            return Err(Error::HealthCheck(format!("Failed to send ping: {}", e)));
+        }
 
-        // Wait for pong with timeout
-        let response = tokio::time::timeout(self.timeout, read.next()).await?;
+        let response = tokio::time::timeout(self.timeout, read.next())
+            .await
+            .map_err(|_| Error::HealthCheck("WebSocket ping timeout".to_string()))?;
         
         match response {
             Some(Ok(Message::Pong(_))) => {
                 endpoint.set_healthy(true);
                 Ok(())
             }
-            _ => {
+            Some(Ok(msg)) => {
                 endpoint.set_healthy(false);
-                Err(Error::Config("No pong received".to_string()))
+                Err(Error::HealthCheck(format!("Expected pong, got: {:?}", msg)))
+            }
+            Some(Err(e)) => {
+                endpoint.set_healthy(false);
+                Err(Error::HealthCheck(format!("WebSocket error: {}", e)))
+            }
+            None => {
+                endpoint.set_healthy(false);
+                Err(Error::HealthCheck("WebSocket connection closed".to_string()))
             }
         }
     }
 }
+
+// The helper function `read_body_to_bytes` is no longer needed and can be deleted.
+// The `BodyExt::collect()` method serves as its modern replacement.

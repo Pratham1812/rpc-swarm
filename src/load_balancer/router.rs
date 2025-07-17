@@ -1,19 +1,17 @@
 use crate::error::Result;
-use crate::load_balancer::{algorithms, endpoint};
+use crate::load_balancer::{LCA, Endpoint};
 use std::sync::atomic::AtomicUsize;
 
 pub struct Router {
-    path: String,
-    network: String,
-    active_connections: AtomicUsize,
-    connections: Vec<Endpoints>,
-    algorithm: LCA,
+    pub network: String,
+    pub active_connections: AtomicUsize,
+    pub connections: Vec<Endpoint>,
+    pub algorithm: LCA,
 }
 
 impl Router {
-    pub fn new(path: String, network: String, connections: &Vec<Endpoints>) -> Result<Self> {
+    pub fn new(network: String, connections: Vec<Endpoint>) -> Result<Self> {
         Ok(Router {
-            path,
             network,
             active_connections: AtomicUsize::new(0),
             connections,

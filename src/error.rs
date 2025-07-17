@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("Configuration error: {0}")]
     Config(String),
+    #[error("Health Check error: {0}")]
+    HealthCheck(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Hyper error: {0}")]

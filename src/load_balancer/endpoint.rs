@@ -3,11 +3,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
 
 #[derive(Debug)]
+#[derive(serde::Deserialize)]
 pub struct Endpoint {
     pub url: Url,
     pub network: String,
-    active_connections: AtomicUsize,
-    healthy: bool,
+    pub active_connections: AtomicUsize,
+    pub healthy: bool,
 }
 // The endpoint struct represents the composition of a rpc endpoint
 // It contains the rpc_url and network name as the publically accessible variables
@@ -34,5 +35,18 @@ impl Endpoint {
     }
     pub fn is_healthy(&self) -> bool {
         self.healthy
+    }
+}
+
+impl Clone for Endpoint {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            network: self.network.clone(),
+            active_connections: AtomicUsize::new(
+                self.active_connections.load(std::sync::atomic::Ordering::SeqCst)
+            ),
+            healthy: self.healthy,
+        }
     }
 }
