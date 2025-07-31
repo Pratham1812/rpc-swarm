@@ -1,9 +1,10 @@
+use log::{error, info};
 use tokio::time::{interval, Duration};
-use log::{info, error};
 
+use crate::error::Result;
 use crate::health::checker::HealthChecker;
 use crate::load_balancer::endpoint::Endpoint;
-use crate::error::Result;
+use futures::future::join_all;
 
 pub struct HealthMonitor {
     checker: HealthChecker,
@@ -19,21 +20,50 @@ impl HealthMonitor {
     }
 
     // Start monitoring endpoints
+    // pub async fn monitor(&self, endpoints: &mut [Endpoint]) -> Result<()> {
+    //     let mut ticker = interval(self.interval);
+    //     loop {
+    //         ticker.tick().await;
+    //         info!(
+    //             "Starting health check cycle for {} endpoints",
+    //             endpoints.len()
+    //         );
+    //         for endpoint in endpoints.iter_mut() {
+    //             match self.checker.check_health(endpoint).await {
+    //                 // Create a new health monitor
+    //                 Ok(()) => info!("Endpoint {} is healthy", endpoint.url),
+    //                 Err(e) => {
+    //                     error!("Endpoint {} health check failed: {}", endpoint.url, e);
+    //                     endpoint.set_healthy(false);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
     pub async fn monitor(&self, endpoints: &mut [Endpoint]) -> Result<()> {
         let mut ticker = interval(self.interval);
         loop {
             ticker.tick().await;
-            info!("Starting health check cycle for {} endpoints", endpoints.len());
-            for endpoint in endpoints.iter_mut() {
-                match self.checker.check_health(endpoint).await {    // Create a new health monitor
+            info!(
+                "Starting health check cycle for {} endpoints",
+                endpoints.len()
+            );
 
-                    Ok(()) => info!("Endpoint {} is healthy", endpoint.url),
-                    Err(e) => {
-                        error!("Endpoint {} health check failed: {}", endpoint.url, e);
-                        endpoint.set_healthy(false);
+            let checks = endpoints.iter_mut().map(|endpoint| {
+                let checker = &self.checker;
+                async move {
+                    match checker.check_health(endpoint).await {
+                        Ok(()) => info!("Endpoint {} is healthy", endpoint.url),
+                        Err(e) => {
+                            error!("Endpoint {} health check failed: {:?}", endpoint.url, e);
+                            endpoint.set_healthy(false);
+                        }
                     }
                 }
-            }
+            });
+
+            join_all(checks).await;
         }
     }
 }
