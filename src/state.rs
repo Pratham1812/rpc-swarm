@@ -1,7 +1,7 @@
 use crate::metrics::NetworkMetrics;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use tokio::sync::RwLock;
 
