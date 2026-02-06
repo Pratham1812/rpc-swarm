@@ -1,0 +1,26 @@
+[server]
+port = 8080
+
+[health_check]
+interval_secs = 30
+
+[networks.ethereum]
+endpoints = [
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth",
+    "https://ethereum.publicnode.com"
+]
+
+[networks.base]
+endpoints = [
+    "https://mainnet.base.org",
+    "https://base.llamarpc.com",
+    "https://base.publicnode.com"
+]
+
+[networks.arbitrum]
+endpoints = [
+    "https://arb1.arbitrum.io/rpc",
+    "https://arbitrum.llamarpc.com",
+    "https://arbitrum-one.publicnode.com"
+]
