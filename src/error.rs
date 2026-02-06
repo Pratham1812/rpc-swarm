@@ -1,21 +1,25 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum Error {
-    #[error("Configuration error: {0}")]
-    Config(String),
-    #[error("Health Check error: {0}")]
-    HealthCheck(String),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Hyper error: {0}")]
-    Hyper(#[from] hyper::Error),
-    #[error("WebSocket error: {0}")]
-    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-    #[error("URL parsing error: {0}")]
-    Url(#[from] url::ParseError),
-}
+pub enum ProxyError {
+    #[error("All endpoints unhealthy for network '{0}'")]
+    NoHealthyEndpoints(String),
 
-pub type Result<T> = std::result::Result<T, Error>;
+    #[error("Network '{0}' not found in configuration")]
+    NetworkNotFound(String),
+
+    #[error("Invalid request path: {0}")]
+    InvalidPath(String),
+
+    #[error("HTTP request failed: {0}")]
+    RequestFailed(#[from] hyper::Error),
+
+    #[error("HTTP client error: {0}")]
+    HttpClientError(#[from] hyper_util::client::legacy::Error),
+
+    #[error("Invalid URI: {0}")]
+    InvalidUri(#[from] http::uri::InvalidUri),
+
+    #[error("Health check failed: {0}")]
+    HealthCheckFailed(String),
+}
